@@ -7,20 +7,13 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build(args: &[String]) -> Result<Config, &'static str> {
-        if args.len() < 3 {
-            return Err("not enough arguments");
-        }
-
-        let query = args[1].clone();
-        let file_path = args[2].clone();
-
-        let ignore_case = env::var("IGNORE_CASE").is_ok();
+    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {
+        args.next();
 
         Ok(Config {
-            query,
-            file_path,
-            ignore_case,
+            query: args.next().ok_or("missing query")?,
+            file_path: args.next().ok_or("missing file path")?,
+            ignore_case: env::var("IGNORE_CASE").is_ok(),
         })
     }
 }
@@ -28,10 +21,10 @@ impl Config {
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(config.file_path)?;
 
-    let results = if config.ignore_case {
-        search_case_insensitive(&config.query, &contents)
+    let results: Vec<&str> = if config.ignore_case {
+        search_case_insensitive(&config.query, &contents).collect()
     } else {
-        search(&config.query, &contents)
+        search(&config.query, &contents).collect()
     };
 
     for line in results {
@@ -41,29 +34,19 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
-    let mut result = Vec::new();
-
-    for line in contents.lines() {
-        if line.contains(&query) {
-            result.push(line);
-        }
-    }
-
-    result
+pub fn search<'a>(query: &str, contents: &'a str) -> impl Iterator<Item = &'a str> {
+    let query = query.to_string();
+    contents.lines().filter(move |l| l.contains(&query))
 }
 
-pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+pub fn search_case_insensitive<'a>(
+    query: &str,
+    contents: &'a str,
+) -> impl Iterator<Item = &'a str> {
     let query = query.to_lowercase();
-    let mut result = Vec::new();
-
-    for line in contents.lines() {
-        if line.to_lowercase().contains(&query) {
-            result.push(line);
-        }
-    }
-
-    result
+    contents
+        .lines()
+        .filter(move |l| l.to_lowercase().contains(&query))
 }
 
 #[cfg(test)]
@@ -79,7 +62,10 @@ safe, fast, productive.
 Pick three.
 Duct tape.";
 
-        assert_eq!(vec!["safe, fast, productive."], search(query, contents));
+        assert_eq!(
+            vec!["safe, fast, productive."],
+            search(query, contents).collect::<Vec<&str>>()
+        );
     }
 
     #[test]
@@ -93,7 +79,7 @@ Trust me.";
 
         assert_eq!(
             vec!["Rust:", "Trust me."],
-            search_case_insensitive(query, contents)
+            search_case_insensitive(query, contents).collect::<Vec<&str>>()
         );
     }
 }
