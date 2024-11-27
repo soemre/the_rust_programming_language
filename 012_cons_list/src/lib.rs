@@ -26,6 +26,14 @@ impl<T> ConsList<T> {
         *next = ListItem::Cons(item, Box::new(ListItem::Nil));
     }
 
+    pub fn merge(&mut self, other: ConsList<T>) {
+        let mut next = &mut *self.list;
+        while let ListItem::Cons(_, n) = next {
+            next = n;
+        }
+        *next = *other.list;
+    }
+
     pub fn len(&self) -> usize {
         self.into_iter().count()
     }
@@ -147,5 +155,14 @@ mod tests {
         let l2 = ConsList::from([2, 3, 2].iter());
 
         assert_ne!(l1, l2);
+    }
+
+    #[test]
+    fn merge() {
+        let mut l1 = ConsList::from([2, 3, 5].iter());
+        let l2 = ConsList::from([2, 3, 2].iter());
+        l1.merge(l2);
+
+        assert_eq!(l1, ConsList::from([2, 3, 5, 2, 3, 2].iter()));
     }
 }
