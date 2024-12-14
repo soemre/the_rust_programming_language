@@ -6,10 +6,11 @@ fn main() {
     let mut router = Router::new();
     router.get("/", get_hello);
 
-    let server = HttpServer::new(7878, router, |req, _err| {
+    let server = HttpServer::new(7878, router, |req, err| {
         let response = Response::return_file(status_code::NOT_FOUND, "404.html").unwrap();
-        if let Some(req) = req {
+        if let Some(mut req) = req {
             req.respond(response).unwrap();
+            eprintln!("Error: {err}")
         }
     })
     .unwrap();

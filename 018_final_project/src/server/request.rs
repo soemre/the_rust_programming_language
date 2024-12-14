@@ -76,7 +76,7 @@ impl Request {
         &self.content
     }
 
-    pub fn respond(mut self, resp: Response) -> Result<()> {
+    pub fn respond(&mut self, resp: Response) -> Result<()> {
         let resp: String = resp.into();
         self.context.write_all(resp.as_bytes())
     }

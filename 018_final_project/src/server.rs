@@ -1,9 +1,12 @@
 use std::{
-    io::{Error, Result},
+    io::{Error, ErrorKind, Result},
     net::{Incoming, TcpListener},
 };
 
 use crate::{request::Request, router::Router};
+
+pub mod request;
+pub mod response;
 
 pub struct HttpServer {
     listener: TcpListener,
@@ -33,16 +36,16 @@ impl HttpServer {
     pub fn listen(&self) {
         let conn = self.connect();
 
-        let run = |req| -> Result<()> {
-            let req = req?;
-            let resp = self.router.handle(&req)?;
+        let run = |req: &mut Result<Request>| -> Result<()> {
+            let req = req.as_mut().ok().ok_or(ErrorKind::NotConnected)?;
+            let resp = self.router.handle(&*req)?;
             req.respond(resp)?;
             Ok(())
         };
 
-        for req in conn {
-            if let Err(err) = run(req) {
-                (self.error_handler)(None, err)
+        for mut req in conn {
+            if let Err(err) = run(&mut req) {
+                (self.error_handler)(req.ok(), err)
             }
         }
     }
