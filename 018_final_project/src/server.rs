@@ -1,30 +1,32 @@
 use std::{
     io::{Error, ErrorKind, Result},
     net::{Incoming, TcpListener},
+    sync::Arc,
 };
 
-use crate::{request::Request, router::Router};
+use crate::{request::Request, router::Router, thread_pool::ThreadPool};
 
 pub mod request;
 pub mod response;
 
 pub struct HttpServer {
     listener: TcpListener,
-    router: Router,
-    error_handler: Box<dyn Fn(Option<Request>, Error)>,
+    router: Arc<Router>,
+    error_handler: Arc<dyn Fn(Option<Request>, Error) + Send + Sync + 'static>,
 }
 
 impl HttpServer {
     pub fn new<T>(port: u32, router: Router, error_handler: T) -> Result<HttpServer>
     where
-        T: Fn(Option<Request>, Error) + 'static,
+        T: Fn(Option<Request>, Error) + Send + Sync + 'static,
     {
         const IP: &str = "127.0.0.1";
         let addr = format!("{IP}:{port}");
 
         let listener = TcpListener::bind(addr)?;
 
-        let error_handler = Box::new(error_handler);
+        let router = Arc::new(router);
+        let error_handler = Arc::new(error_handler);
 
         Ok(HttpServer {
             listener,
@@ -35,18 +37,24 @@ impl HttpServer {
 
     pub fn listen(&self) {
         let conn = self.connect();
-
-        let run = |req: &mut Result<Request>| -> Result<()> {
-            let req = req.as_mut().ok().ok_or(ErrorKind::NotConnected)?;
-            let resp = self.router.handle(&*req)?;
-            req.respond(resp)?;
-            Ok(())
-        };
+        let pool = ThreadPool::new(4);
 
         for mut req in conn {
-            if let Err(err) = run(&mut req) {
-                (self.error_handler)(req.ok(), err)
-            }
+            let error_handler = Arc::clone(&self.error_handler);
+            let router = Arc::clone(&self.router);
+
+            let run = move |req: &mut Result<Request>| -> Result<()> {
+                let req = req.as_mut().ok().ok_or(ErrorKind::NotConnected)?;
+                let resp = router.handle(&*req)?;
+                req.respond(resp)?;
+                Ok(())
+            };
+
+            pool.execute(move || {
+                if let Err(err) = run(&mut req) {
+                    (error_handler)(req.ok(), err)
+                }
+            })
         }
     }
 
